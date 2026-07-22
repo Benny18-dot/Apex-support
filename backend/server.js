@@ -108,15 +108,36 @@ async function seedDefaultUsers() {
   }
 }
 
-// Connect to MongoDB
-mongoose.connect(MONGO_URI)
-  .then(() => {
+// Vercel Serverless MongoDB Connection Handler
+let isDbConnected = false;
+async function connectToDatabase() {
+  if (isDbConnected || mongoose.connection.readyState === 1) {
+    return;
+  }
+  try {
+    await mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 5000
+    });
+    isDbConnected = true;
     console.log('MongoDB connection established successfully.');
     seedDefaultUsers();
-  })
-  .catch(err => {
+  } catch (err) {
     console.error('MongoDB connection failure:', err.message);
-  });
+    throw err;
+  }
+}
+
+// Global middleware to await DB connection before any route
+app.use(async (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    try {
+      await connectToDatabase();
+    } catch (err) {
+      return res.status(500).json({ error: `Database connection failed: ${err.message}` });
+    }
+  }
+  next();
+});
 
 // Diagnostic check route
 app.get('/api/health', (req, res) => {
